@@ -23,22 +23,21 @@ class KistStudentPortal extends StatelessWidget {
   Widget build(BuildContext context) {
     return MaterialApp(
       debugShowCheckedModeBanner: false,
-      title: 'KIST Lab Request',
+      title: 'KINAP Lab Request',
       theme: ThemeData(
         useMaterial3: true,
         textTheme: GoogleFonts.poppinsTextTheme(), 
         colorScheme: ColorScheme.fromSeed(
           brightness: Brightness.dark,
-          seedColor: const Color(0xFF6C63FF), 
+          seedColor: const Color(0xFFE31837), // KINAP Red
         ),
-        scaffoldBackgroundColor: const Color(0xFF0F0C29), 
+        scaffoldBackgroundColor: const Color(0xFF121212), // Deep sleek black
       ),
       home: const ToolRequestScreen(),
     );
   }
 }
 
-// --- DYNAMIC TOOL MODEL ---
 class ToolEntry {
   TextEditingController nameCtrl = TextEditingController();
   int qty = 1;
@@ -54,13 +53,11 @@ class ToolRequestScreen extends StatefulWidget {
 class _ToolRequestScreenState extends State<ToolRequestScreen> {
   final _formKey = GlobalKey<FormState>();
   
-  // Controllers & State
   final _nameController = TextEditingController();
   final _admController = TextEditingController();
   final _phoneController = TextEditingController();
-  final _classController = TextEditingController(); // Used if 'Other' is selected
+  final _classController = TextEditingController(); 
   
-  // --- NEW: Class Dropdown State ---
   String? _selectedClass;
   final List<String> _hardcodedClasses = [
     'Diploma in Mechatronics (Y1)',
@@ -70,16 +67,13 @@ class _ToolRequestScreenState extends State<ToolRequestScreen> {
     'Other'
   ];
 
-  // --- NEW: Locker Key State ---
   bool _requestLockerKey = false;
-  
   List<ToolEntry> _requestedTools = [ToolEntry()]; 
   
   bool _isSubmitting = false;
   bool _isReturningUser = false;
   List<Map<String, dynamic>> _dbStudents = [];
   
-  // Offline Sync Timer
   Timer? _syncTimer;
   bool _isSyncing = false;
 
@@ -98,25 +92,19 @@ class _ToolRequestScreenState extends State<ToolRequestScreen> {
     super.dispose();
   }
 
-  // --- BACKGROUND SYNC ENGINE ---
   Future<void> _syncOfflineRequests() async {
     if (_isSyncing) return;
     _isSyncing = true;
 
     final prefs = await SharedPreferences.getInstance();
     final queue = prefs.getStringList('student_offline_queue') ?? [];
-    
-    if (queue.isEmpty) {
-      _isSyncing = false;
-      return;
-    }
+    if (queue.isEmpty) { _isSyncing = false; return; }
 
     List<String> failedQueue = [];
     for (var item in queue) {
       try {
         final payload = jsonDecode(item);
         await Supabase.instance.client.from('tool_requests').insert(payload);
-        debugPrint("Successfully synced offline request to admin!");
       } catch (e) {
         failedQueue.add(item); 
       }
@@ -129,9 +117,7 @@ class _ToolRequestScreenState extends State<ToolRequestScreen> {
   Future<void> _loadInitialData() async {
     try {
       final data = await Supabase.instance.client.from('students').select();
-      if (mounted) {
-        setState(() { _dbStudents = List<Map<String, dynamic>>.from(data); });
-      }
+      if (mounted) setState(() { _dbStudents = List<Map<String, dynamic>>.from(data); });
     } catch (e) {
       debugPrint("Offline: Cannot fetch auto-complete list.");
     }
@@ -145,7 +131,6 @@ class _ToolRequestScreenState extends State<ToolRequestScreen> {
           _nameController.text = savedName;
           _admController.text = prefs.getString('saved_adm') ?? '';
           _phoneController.text = prefs.getString('saved_phone') ?? '';
-          
           String savedClass = prefs.getString('saved_class') ?? '';
           if (_hardcodedClasses.contains(savedClass)) {
             _selectedClass = savedClass;
@@ -163,10 +148,7 @@ class _ToolRequestScreenState extends State<ToolRequestScreen> {
     await prefs.remove('saved_name');
     setState(() {
       _isReturningUser = false;
-      _nameController.clear();
-      _admController.clear();
-      _phoneController.clear();
-      _classController.clear();
+      _nameController.clear(); _admController.clear(); _phoneController.clear(); _classController.clear();
       _selectedClass = null;
     });
   }
@@ -175,8 +157,6 @@ class _ToolRequestScreenState extends State<ToolRequestScreen> {
     if (!_formKey.currentState!.validate()) return;
     
     final validTools = _requestedTools.where((t) => t.nameCtrl.text.trim().isNotEmpty).toList();
-    
-    // NEW: Validation allows submission if they ONLY want a locker key
     if (validTools.isEmpty && !_requestLockerKey) {
       ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Please request at least one tool or a locker key!'), backgroundColor: Colors.redAccent));
       return;
@@ -193,13 +173,8 @@ class _ToolRequestScreenState extends State<ToolRequestScreen> {
       await prefs.setString('saved_phone', _phoneController.text.trim());
       await prefs.setString('saved_class', finalClass);
 
-      // Format Payload
       final toolsJson = validTools.map((t) => {'tool': t.nameCtrl.text.trim(), 'qty': t.qty}).toList();
-      
-      // NEW: Add Locker Key to the payload if requested
-      if (_requestLockerKey) {
-        toolsJson.insert(0, {'tool': 'Locker Key', 'qty': 1}); // Inserts at the top of the list
-      }
+      if (_requestLockerKey) toolsJson.insert(0, {'tool': 'Locker Key', 'qty': 1});
 
       final payload = {
         'student_name': _nameController.text.trim(),
@@ -220,15 +195,12 @@ class _ToolRequestScreenState extends State<ToolRequestScreen> {
         await prefs.setStringList('student_offline_queue', queue);
       }
 
-      if (mounted) {
-        Navigator.pushReplacement(context, MaterialPageRoute(builder: (context) => SuccessScreen(isOffline: wentOffline)));
-      }
+      if (mounted) Navigator.pushReplacement(context, MaterialPageRoute(builder: (context) => SuccessScreen(isOffline: wentOffline)));
     } finally {
       if (mounted) setState(() => _isSubmitting = false);
     }
   }
 
-  // --- UI WIDGETS ---
   Widget _buildGlassCard({required Widget child}) {
     return ClipRRect(
       borderRadius: BorderRadius.circular(24),
@@ -237,9 +209,9 @@ class _ToolRequestScreenState extends State<ToolRequestScreen> {
         child: Container(
           padding: const EdgeInsets.all(24),
           decoration: BoxDecoration(
-            color: Colors.white.withOpacity(0.05),
+            color: Colors.white.withOpacity(0.03),
             borderRadius: BorderRadius.circular(24),
-            border: Border.all(color: Colors.white.withOpacity(0.1), width: 1.5),
+            border: Border.all(color: Colors.white.withOpacity(0.08), width: 1.5),
           ),
           child: child,
         ),
@@ -247,15 +219,15 @@ class _ToolRequestScreenState extends State<ToolRequestScreen> {
     );
   }
 
-  InputDecoration _neonInput(String label, IconData icon) {
+  InputDecoration _kinapInput(String label, IconData icon) {
     return InputDecoration(
       labelText: label,
-      labelStyle: TextStyle(color: Colors.white.withOpacity(0.7)),
-      prefixIcon: Icon(icon, color: Colors.cyanAccent),
+      labelStyle: TextStyle(color: Colors.white.withOpacity(0.6)),
+      prefixIcon: Icon(icon, color: Colors.white70),
       filled: true,
-      fillColor: Colors.black.withOpacity(0.3),
+      fillColor: Colors.black.withOpacity(0.4),
       border: OutlineInputBorder(borderRadius: BorderRadius.circular(16), borderSide: BorderSide.none),
-      focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(16), borderSide: const BorderSide(color: Colors.cyanAccent, width: 2)),
+      focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(16), borderSide: const BorderSide(color: Color(0xFFE31837), width: 2)), // KINAP Red Focus
       errorBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(16), borderSide: const BorderSide(color: Colors.redAccent, width: 1)),
     );
   }
@@ -266,9 +238,9 @@ class _ToolRequestScreenState extends State<ToolRequestScreen> {
       body: Container(
         decoration: const BoxDecoration(
           gradient: LinearGradient(
-            begin: Alignment.topLeft,
-            end: Alignment.bottomRight,
-            colors: [Color(0xFF0F0C29), Color(0xFF302B63), Color(0xFF24243E)], 
+            begin: Alignment.topCenter,
+            end: Alignment.bottomCenter,
+            colors: [Color(0xFF1E0000), Color(0xFF121212), Color(0xFF0A0A0A)], // Dark red to black gradient
           ),
         ),
         child: SafeArea(
@@ -281,15 +253,22 @@ class _ToolRequestScreenState extends State<ToolRequestScreen> {
                   key: _formKey,
                   child: Column(
                     children: [
-                      // --- HEADER ---
-                      const Icon(Icons.rocket_launch_rounded, color: Colors.cyanAccent, size: 50)
-                          .animate(onPlay: (controller) => controller.repeat(reverse: true))
-                          .moveY(begin: -5, end: 5, curve: Curves.easeInOut, duration: 1500.ms),
-                      const SizedBox(height: 10),
-                      const Text("KIST Fast Track", style: TextStyle(fontSize: 32, fontWeight: FontWeight.bold, color: Colors.white, letterSpacing: 1.2))
-                          .animate().fadeIn().slideY(begin: -0.2),
-                      const Text("Request your tools instantly.", style: TextStyle(color: Colors.cyanAccent, fontSize: 16))
+                      // --- BRANDED HEADER ---
+                      Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
+                        decoration: BoxDecoration(
+                          color: Colors.white,
+                          borderRadius: BorderRadius.circular(20),
+                          boxShadow: [BoxShadow(color: const Color(0xFFE31837).withOpacity(0.3), blurRadius: 20, spreadRadius: 2)]
+                        ),
+                        child: Image.asset('assets/kinap.png', height: 60), // Institutional Logo
+                      ).animate().fadeIn(duration: 800.ms).slideY(begin: -0.2),
+                      
+                      const SizedBox(height: 20),
+                      const Text("Lab Requisition", style: TextStyle(fontSize: 28, fontWeight: FontWeight.bold, color: Colors.white, letterSpacing: 1.2))
                           .animate().fadeIn(delay: 200.ms),
+                      Text("Skip the line. Request your tools instantly.", style: TextStyle(color: Colors.white.withOpacity(0.6), fontSize: 16))
+                          .animate().fadeIn(delay: 400.ms),
                       const SizedBox(height: 30),
 
                       // --- PROFILE CARD ---
@@ -304,14 +283,14 @@ class _ToolRequestScreenState extends State<ToolRequestScreen> {
                                   const Text("Welcome Back! 🤙", style: TextStyle(color: Colors.white, fontSize: 20, fontWeight: FontWeight.bold)),
                                   TextButton(
                                     onPressed: _resetUser,
-                                    child: const Text("Not you?", style: TextStyle(color: Colors.pinkAccent)),
+                                    child: const Text("Not you?", style: TextStyle(color: Colors.white54)),
                                   )
                                 ],
                               ),
                               const SizedBox(height: 10),
                               ListTile(
                                 contentPadding: EdgeInsets.zero,
-                                leading: const CircleAvatar(backgroundColor: Colors.cyanAccent, foregroundColor: Colors.black, child: Icon(Icons.person)),
+                                leading: const CircleAvatar(backgroundColor: Color(0xFFE31837), foregroundColor: Colors.white, child: Icon(Icons.person)),
                                 title: Text(_nameController.text, style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 18)),
                                 subtitle: Text("${_admController.text} • ${_selectedClass == 'Other' ? _classController.text : _selectedClass}", style: TextStyle(color: Colors.white.withOpacity(0.7))),
                               )
@@ -344,11 +323,9 @@ class _ToolRequestScreenState extends State<ToolRequestScreen> {
                                 fieldViewBuilder: (context, controller, focusNode, onEditingComplete) {
                                   controller.addListener(() { _nameController.text = controller.text; });
                                   return TextFormField(
-                                    controller: controller,
-                                    focusNode: focusNode,
-                                    onEditingComplete: onEditingComplete,
+                                    controller: controller, focusNode: focusNode, onEditingComplete: onEditingComplete,
                                     style: const TextStyle(color: Colors.white),
-                                    decoration: _neonInput("Full Name", Icons.person_search).copyWith(
+                                    decoration: _kinapInput("Full Name", Icons.person_search).copyWith(
                                       hintText: "Start typing your name...",
                                       hintStyle: TextStyle(color: Colors.white.withOpacity(0.3))
                                     ),
@@ -361,16 +338,15 @@ class _ToolRequestScreenState extends State<ToolRequestScreen> {
                                     child: Material(
                                       color: Colors.transparent,
                                       child: Container(
-                                        width: 300,
-                                        margin: const EdgeInsets.only(top: 8),
-                                        decoration: BoxDecoration(color: const Color(0xFF24243E), borderRadius: BorderRadius.circular(16), border: Border.all(color: Colors.cyanAccent.withOpacity(0.5))),
+                                        width: 300, margin: const EdgeInsets.only(top: 8),
+                                        decoration: BoxDecoration(color: const Color(0xFF1E1E1E), borderRadius: BorderRadius.circular(16), border: Border.all(color: const Color(0xFFE31837).withOpacity(0.5))),
                                         child: ListView.builder(
                                           padding: const EdgeInsets.all(8), shrinkWrap: true, itemCount: options.length,
                                           itemBuilder: (ctx, i) {
                                             final option = options.elementAt(i);
                                             return ListTile(
                                               title: Text(option['name'], style: const TextStyle(color: Colors.white)),
-                                              subtitle: Text(option['adm_number'] ?? '', style: const TextStyle(color: Colors.cyanAccent, fontSize: 12)),
+                                              subtitle: Text(option['adm_number'] ?? '', style: const TextStyle(color: Color(0xFFE31837), fontSize: 12)),
                                               onTap: () => onSelected(option),
                                             );
                                           },
@@ -383,41 +359,28 @@ class _ToolRequestScreenState extends State<ToolRequestScreen> {
                               
                               const SizedBox(height: 15),
                               TextFormField(
-                                controller: _admController,
-                                style: const TextStyle(color: Colors.white),
-                                textCapitalization: TextCapitalization.characters,
-                                decoration: _neonInput('Admission Number', Icons.badge),
-                                validator: (val) => val!.isEmpty ? 'Required' : null,
+                                controller: _admController, style: const TextStyle(color: Colors.white), textCapitalization: TextCapitalization.characters,
+                                decoration: _kinapInput('Admission Number', Icons.badge), validator: (val) => val!.isEmpty ? 'Required' : null,
                               ),
                               const SizedBox(height: 15),
                               TextFormField(
-                                controller: _phoneController,
-                                style: const TextStyle(color: Colors.white),
-                                keyboardType: TextInputType.phone,
-                                decoration: _neonInput('Phone Number', Icons.phone),
-                                validator: (val) => val!.isEmpty ? 'Required' : null,
+                                controller: _phoneController, style: const TextStyle(color: Colors.white), keyboardType: TextInputType.phone,
+                                decoration: _kinapInput('Phone Number', Icons.phone), validator: (val) => val!.isEmpty ? 'Required' : null,
                               ),
                               const SizedBox(height: 15),
                               
-                              // --- NEW: CLASS DROPDOWN ---
                               DropdownButtonFormField<String>(
-                                value: _selectedClass,
-                                dropdownColor: const Color(0xFF24243E),
-                                style: const TextStyle(color: Colors.white, fontFamily: 'Poppins'),
-                                decoration: _neonInput('Class / Group', Icons.group),
-                                items: _hardcodedClasses.map((String c) {
-                                  return DropdownMenuItem<String>(value: c, child: Text(c));
-                                }).toList(),
+                                value: _selectedClass, dropdownColor: const Color(0xFF1E1E1E), style: const TextStyle(color: Colors.white, fontFamily: 'Poppins'),
+                                decoration: _kinapInput('Class / Group', Icons.group),
+                                items: _hardcodedClasses.map((String c) => DropdownMenuItem<String>(value: c, child: Text(c))).toList(),
                                 onChanged: (val) => setState(() => _selectedClass = val),
                                 validator: (val) => val == null ? 'Please select your class' : null,
                               ),
                               if (_selectedClass == 'Other') ...[
                                 const SizedBox(height: 15),
                                 TextFormField(
-                                  controller: _classController,
-                                  style: const TextStyle(color: Colors.white),
-                                  decoration: _neonInput('Type your class name', Icons.edit),
-                                  validator: (val) => val!.isEmpty ? 'Required' : null,
+                                  controller: _classController, style: const TextStyle(color: Colors.white),
+                                  decoration: _kinapInput('Type your class name', Icons.edit), validator: (val) => val!.isEmpty ? 'Required' : null,
                                 ).animate().fadeIn().slideY(begin: -0.2),
                               ]
                             ],
@@ -434,29 +397,25 @@ class _ToolRequestScreenState extends State<ToolRequestScreen> {
                             const Text("What do you need? 🔧", style: TextStyle(color: Colors.white, fontSize: 20, fontWeight: FontWeight.bold)),
                             const SizedBox(height: 20),
 
-                            // --- NEW: LOCKER KEY TOGGLE ---
+                            // --- LOCKER KEY TOGGLE ---
                             GestureDetector(
                               onTap: () => setState(() => _requestLockerKey = !_requestLockerKey),
                               child: AnimatedContainer(
                                 duration: const Duration(milliseconds: 300),
                                 padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 15),
                                 decoration: BoxDecoration(
-                                  color: _requestLockerKey ? Colors.deepOrange.withOpacity(0.2) : Colors.black.withOpacity(0.3),
+                                  color: _requestLockerKey ? const Color(0xFFE31837).withOpacity(0.2) : Colors.black.withOpacity(0.3),
                                   borderRadius: BorderRadius.circular(16),
-                                  border: Border.all(color: _requestLockerKey ? Colors.deepOrangeAccent : Colors.transparent, width: 2)
+                                  border: Border.all(color: _requestLockerKey ? const Color(0xFFE31837) : Colors.transparent, width: 2)
                                 ),
                                 child: Row(
                                   children: [
-                                    Icon(Icons.vpn_key, color: _requestLockerKey ? Colors.deepOrangeAccent : Colors.white54, size: 28),
+                                    Icon(Icons.vpn_key, color: _requestLockerKey ? const Color(0xFFE31837) : Colors.white54, size: 28),
                                     const SizedBox(width: 15),
                                     Expanded(
-                                      child: Text(
-                                        "I need a Locker Key", 
-                                        style: TextStyle(color: _requestLockerKey ? Colors.white : Colors.white70, fontSize: 16, fontWeight: FontWeight.bold)
-                                      ),
+                                      child: Text("I need a Locker Key", style: TextStyle(color: _requestLockerKey ? Colors.white : Colors.white70, fontSize: 16, fontWeight: FontWeight.bold)),
                                     ),
-                                    if (_requestLockerKey)
-                                      const Icon(Icons.check_circle, color: Colors.deepOrangeAccent).animate().scale(duration: 200.ms)
+                                    if (_requestLockerKey) const Icon(Icons.check_circle, color: Color(0xFFE31837)).animate().scale(duration: 200.ms)
                                   ],
                                 ),
                               ),
@@ -468,42 +427,30 @@ class _ToolRequestScreenState extends State<ToolRequestScreen> {
                             
                             // --- DYNAMIC TOOLS ---
                             ..._requestedTools.asMap().entries.map((entry) {
-                              int idx = entry.key;
-                              ToolEntry tool = entry.value;
+                              int idx = entry.key; ToolEntry tool = entry.value;
                               return Padding(
                                 padding: const EdgeInsets.only(bottom: 12),
                                 child: Row(
                                   children: [
                                     Expanded(
                                       child: TextFormField(
-                                        controller: tool.nameCtrl,
-                                        style: const TextStyle(color: Colors.white),
-                                        decoration: _neonInput("Tool Name (e.g. Multimeter)", Icons.build_circle),
+                                        controller: tool.nameCtrl, style: const TextStyle(color: Colors.white),
+                                        decoration: _kinapInput("Tool Name (e.g. Multimeter)", Icons.build_circle),
                                       ),
                                     ),
                                     const SizedBox(width: 10),
-                                    
                                     Container(
                                       decoration: BoxDecoration(color: Colors.black.withOpacity(0.3), borderRadius: BorderRadius.circular(16)),
                                       child: Row(
                                         children: [
-                                          IconButton(
-                                            icon: const Icon(Icons.remove, color: Colors.pinkAccent),
-                                            onPressed: () { if (tool.qty > 1) setState(() => tool.qty--); },
-                                          ),
+                                          IconButton(icon: const Icon(Icons.remove, color: Colors.white54), onPressed: () { if (tool.qty > 1) setState(() => tool.qty--); }),
                                           Text('${tool.qty}', style: const TextStyle(color: Colors.white, fontSize: 18, fontWeight: FontWeight.bold)),
-                                          IconButton(
-                                            icon: const Icon(Icons.add, color: Colors.cyanAccent),
-                                            onPressed: () { setState(() => tool.qty++); },
-                                          ),
+                                          IconButton(icon: const Icon(Icons.add, color: Color(0xFFE31837)), onPressed: () { setState(() => tool.qty++); }),
                                         ],
                                       ),
                                     ),
                                     if (_requestedTools.length > 1)
-                                      IconButton(
-                                        icon: const Icon(Icons.close, color: Colors.white54),
-                                        onPressed: () => setState(() { tool.dispose(); _requestedTools.removeAt(idx); }),
-                                      )
+                                      IconButton(icon: const Icon(Icons.close, color: Colors.white54), onPressed: () => setState(() { tool.dispose(); _requestedTools.removeAt(idx); }))
                                   ],
                                 ).animate().fadeIn().slideX(begin: 0.1),
                               );
@@ -512,8 +459,8 @@ class _ToolRequestScreenState extends State<ToolRequestScreen> {
                             const SizedBox(height: 10),
                             TextButton.icon(
                               onPressed: () => setState(() => _requestedTools.add(ToolEntry())), 
-                              icon: const Icon(Icons.add_circle, color: Colors.cyanAccent), 
-                              label: const Text("Add another tool", style: TextStyle(color: Colors.cyanAccent, fontWeight: FontWeight.bold, fontSize: 16))
+                              icon: const Icon(Icons.add_circle, color: Colors.white70), 
+                              label: const Text("Add another tool", style: TextStyle(color: Colors.white70, fontWeight: FontWeight.bold, fontSize: 16))
                             )
                           ],
                         ),
@@ -523,22 +470,21 @@ class _ToolRequestScreenState extends State<ToolRequestScreen> {
 
                       // --- SUBMIT BUTTON ---
                       SizedBox(
-                        width: double.infinity,
-                        height: 65,
+                        width: double.infinity, height: 65,
                         child: ElevatedButton(
                           style: ElevatedButton.styleFrom(
-                            backgroundColor: Colors.cyanAccent, 
-                            foregroundColor: Colors.black,
+                            backgroundColor: const Color(0xFFE31837), // KINAP Red
+                            foregroundColor: Colors.white,
                             elevation: 10,
-                            shadowColor: Colors.cyanAccent.withOpacity(0.5),
+                            shadowColor: const Color(0xFFE31837).withOpacity(0.5),
                             shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
                           ),
                           onPressed: _isSubmitting ? null : _submitRequest,
                           child: _isSubmitting 
-                            ? const CircularProgressIndicator(color: Colors.black)
+                            ? const CircularProgressIndicator(color: Colors.white)
                             : const Text("BEAM IT TO ADMIN 🚀", style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold, letterSpacing: 1.5)),
                         ),
-                      ).animate(onPlay: (c) => c.repeat(reverse: true)).shimmer(duration: 2000.ms, color: Colors.white.withOpacity(0.5)),
+                      ).animate(onPlay: (c) => c.repeat(reverse: true)).shimmer(duration: 2000.ms, color: Colors.white.withOpacity(0.3)),
                       
                       const SizedBox(height: 40),
                     ],
@@ -567,7 +513,7 @@ class SuccessScreen extends StatelessWidget {
           gradient: LinearGradient(
             begin: Alignment.topRight,
             end: Alignment.bottomLeft,
-            colors: [Color(0xFF1CB5E0), Color(0xFF000046)],
+            colors: [Color(0xFF1E0000), Color(0xFF121212)],
           ),
         ),
         child: Column(
@@ -576,18 +522,15 @@ class SuccessScreen extends StatelessWidget {
             Container(
               padding: const EdgeInsets.all(30),
               decoration: BoxDecoration(
-                color: isOffline ? Colors.orange.withOpacity(0.1) : Colors.white.withOpacity(0.1), 
+                color: isOffline ? Colors.orange.withOpacity(0.1) : const Color(0xFFE31837).withOpacity(0.1), 
                 shape: BoxShape.circle, 
-                border: Border.all(color: isOffline ? Colors.orange : Colors.cyanAccent, width: 2)
+                border: Border.all(color: isOffline ? Colors.orange : const Color(0xFFE31837), width: 2)
               ),
-              child: Icon(isOffline ? Icons.wifi_off : Icons.verified_rounded, color: isOffline ? Colors.orange : Colors.cyanAccent, size: 100)
-                  .animate()
-                  .scale(duration: 600.ms, curve: Curves.elasticOut)
-                  .then(delay: 200.ms)
-                  .shake(hz: 4, curve: Curves.easeInOutCubic),
+              child: Icon(isOffline ? Icons.wifi_off : Icons.verified_rounded, color: isOffline ? Colors.orange : const Color(0xFFE31837), size: 100)
+                  .animate().scale(duration: 600.ms, curve: Curves.elasticOut).then(delay: 200.ms).shake(hz: 4, curve: Curves.easeInOutCubic),
             ),
             const SizedBox(height: 40),
-            Text(isOffline ? "SAVED OFFLINE" : "LOCKED IN!", style: TextStyle(fontSize: 40, fontWeight: FontWeight.bold, color: Colors.white, letterSpacing: 2))
+            Text(isOffline ? "SAVED OFFLINE" : "LOCKED IN!", style: const TextStyle(fontSize: 40, fontWeight: FontWeight.bold, color: Colors.white, letterSpacing: 2))
                 .animate().fadeIn(delay: 400.ms).slideY(begin: 0.5),
             const SizedBox(height: 15),
             
@@ -606,7 +549,7 @@ class SuccessScreen extends StatelessWidget {
               label: const Text("Submit another request", style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
               style: ElevatedButton.styleFrom(
                 backgroundColor: Colors.white,
-                foregroundColor: const Color(0xFF000046),
+                foregroundColor: Colors.black,
                 padding: const EdgeInsets.symmetric(horizontal: 30, vertical: 15),
                 shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(30))
               ),
