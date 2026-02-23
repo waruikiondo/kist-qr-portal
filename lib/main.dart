@@ -58,13 +58,19 @@ class _ToolRequestScreenState extends State<ToolRequestScreen> {
   final _phoneController = TextEditingController();
   final _classController = TextEditingController(); 
   
+  // NEW: Focus node for Admission Number auto-fill
+  final _admFocusNode = FocusNode();
+  bool _isFetchingStudent = false;
+  
   String? _selectedClass;
   final List<String> _hardcodedClasses = [
     'Diploma in Mechatronics (Y1)',
     'Diploma in Mechatronics (Y2)',
     'Certificate in Mechatronics',
     'Short Course / Artisan',
-    'Other'
+    'Other',
+    // Added your actual db groups here to prevent dropdown errors if they auto-fill
+    'DIM2509B', 'DIM2509A', 'DIM2505B', 'DIM2505A', 'DIM2409B', 'DIM2409A', 'DIM2405', 'DIM2309'
   ];
 
   bool _requestLockerKey = false;
@@ -82,14 +88,63 @@ class _ToolRequestScreenState extends State<ToolRequestScreen> {
     super.initState();
     _loadInitialData();
     _syncTimer = Timer.periodic(const Duration(seconds: 10), (_) => _syncOfflineRequests());
+    
+    // NEW: Listen to focus changes on ADM field
+    _admFocusNode.addListener(() {
+      if (!_admFocusNode.hasFocus) {
+        _autoFillFromAdm();
+      }
+    });
   }
 
   @override
   void dispose() {
     _syncTimer?.cancel();
-    _nameController.dispose(); _admController.dispose(); _phoneController.dispose(); _classController.dispose();
+    _nameController.dispose(); 
+    _admController.dispose(); 
+    _phoneController.dispose(); 
+    _classController.dispose();
+    _admFocusNode.dispose();
     for (var t in _requestedTools) { t.dispose(); }
     super.dispose();
+  }
+
+  // NEW: Search by ADM function
+  Future<void> _autoFillFromAdm() async {
+    final adm = _admController.text.trim().toUpperCase();
+    if (adm.isEmpty) return;
+
+    setState(() => _isFetchingStudent = true);
+    Map<String, dynamic>? foundStudent;
+
+    // 1. Try instant local cache first (from _loadInitialData)
+    try {
+      foundStudent = _dbStudents.firstWhere((s) => (s['adm_number'] ?? '').toString().toUpperCase() == adm);
+    } catch (e) {
+      // 2. If not in local cache, try Supabase fallback
+      try {
+        final response = await Supabase.instance.client.from('students').select().eq('adm_number', adm).maybeSingle();
+        if (response != null) foundStudent = response;
+      } catch (err) { /* Ignore network errors here */ }
+    }
+
+    if (foundStudent != null && mounted) {
+      setState(() {
+        _nameController.text = foundStudent!['name'] ?? '';
+        String dbClass = foundStudent!['group_name'] ?? '';
+        if (_hardcodedClasses.contains(dbClass)) {
+          _selectedClass = dbClass;
+        } else if (dbClass.isNotEmpty) {
+          _selectedClass = 'Other';
+          _classController.text = dbClass;
+        }
+      });
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Student found! Details auto-filled.', style: TextStyle(color: Colors.white)), backgroundColor: Colors.green, duration: Duration(seconds: 2)),
+      );
+    }
+    
+    if (mounted) setState(() => _isFetchingStudent = false);
   }
 
   Future<void> _syncOfflineRequests() async {
@@ -219,11 +274,13 @@ class _ToolRequestScreenState extends State<ToolRequestScreen> {
     );
   }
 
-  InputDecoration _kinapInput(String label, IconData icon) {
+  // NEW: Updated to accept a suffix icon for the loading spinner
+  InputDecoration _kinapInput(String label, IconData icon, {Widget? suffixIcon}) {
     return InputDecoration(
       labelText: label,
       labelStyle: TextStyle(color: Colors.white.withOpacity(0.6)),
       prefixIcon: Icon(icon, color: Colors.white70),
+      suffixIcon: suffixIcon,
       filled: true,
       fillColor: Colors.black.withOpacity(0.4),
       border: OutlineInputBorder(borderRadius: BorderRadius.circular(16), borderSide: BorderSide.none),
@@ -302,6 +359,24 @@ class _ToolRequestScreenState extends State<ToolRequestScreen> {
                               const Text("Who are you?", style: TextStyle(color: Colors.white, fontSize: 20, fontWeight: FontWeight.bold)),
                               const SizedBox(height: 20),
                               
+                              // 1. ADMISSION NUMBER (Moved to top for Auto-Fill)
+                              TextFormField(
+                                controller: _admController, 
+                                focusNode: _admFocusNode,
+                                style: const TextStyle(color: Colors.white), 
+                                textCapitalization: TextCapitalization.characters,
+                                decoration: _kinapInput(
+                                  'Admission Number', 
+                                  Icons.badge,
+                                  suffixIcon: _isFetchingStudent 
+                                    ? const Padding(padding: EdgeInsets.all(12), child: SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2, color: Color(0xFFE31837)))) 
+                                    : null
+                                ), 
+                                validator: (val) => val!.isEmpty ? 'Required' : null,
+                              ),
+                              const SizedBox(height: 15),
+
+                              // 2. NAME AUTOCOMPLETE (Backup if they don't know ADM)
                               Autocomplete<Map<String, dynamic>>(
                                 optionsBuilder: (TextEditingValue textVal) {
                                   if (textVal.text.isEmpty) return const Iterable<Map<String, dynamic>>.empty();
@@ -321,12 +396,16 @@ class _ToolRequestScreenState extends State<ToolRequestScreen> {
                                   setState(() {});
                                 },
                                 fieldViewBuilder: (context, controller, focusNode, onEditingComplete) {
+                                  // Sync the autocomplete controller with our main name controller
+                                  if (controller.text != _nameController.text) {
+                                    controller.text = _nameController.text;
+                                  }
                                   controller.addListener(() { _nameController.text = controller.text; });
                                   return TextFormField(
                                     controller: controller, focusNode: focusNode, onEditingComplete: onEditingComplete,
                                     style: const TextStyle(color: Colors.white),
                                     decoration: _kinapInput("Full Name", Icons.person_search).copyWith(
-                                      hintText: "Start typing your name...",
+                                      hintText: "Or search by your name...",
                                       hintStyle: TextStyle(color: Colors.white.withOpacity(0.3))
                                     ),
                                     validator: (val) => val == null || val.isEmpty ? "Required" : null,
@@ -358,17 +437,15 @@ class _ToolRequestScreenState extends State<ToolRequestScreen> {
                               ),
                               
                               const SizedBox(height: 15),
-                              TextFormField(
-                                controller: _admController, style: const TextStyle(color: Colors.white), textCapitalization: TextCapitalization.characters,
-                                decoration: _kinapInput('Admission Number', Icons.badge), validator: (val) => val!.isEmpty ? 'Required' : null,
-                              ),
-                              const SizedBox(height: 15),
+
+                              // 3. PHONE NUMBER
                               TextFormField(
                                 controller: _phoneController, style: const TextStyle(color: Colors.white), keyboardType: TextInputType.phone,
                                 decoration: _kinapInput('Phone Number', Icons.phone), validator: (val) => val!.isEmpty ? 'Required' : null,
                               ),
                               const SizedBox(height: 15),
                               
+                              // 4. CLASS DROPDOWN
                               DropdownButtonFormField<String>(
                                 value: _selectedClass, dropdownColor: const Color(0xFF1E1E1E), style: const TextStyle(color: Colors.white, fontFamily: 'Poppins'),
                                 decoration: _kinapInput('Class / Group', Icons.group),
